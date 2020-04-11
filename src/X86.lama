@@ -275,6 +275,56 @@ fun suffix (op) {
 -- and stack machine code, returns an updated environment and x86 code.
 fun compile (env, code) {
   fun compile (env, code) {
+
+    fun mathOp (x, y, s, op) {
+      {
+        Mov (y, eax),
+        Binop (op, x, eax),
+        Mov (eax, s)
+      }
+    }
+
+    fun compOp (x, y, s, op) {
+      {
+        Mov(s2, eax), 
+        Binop("^", edx, edx), 
+        Binop("cmp", s1, eax), 
+        Set(suffix(op), "%dl"), 
+        Mov(edx, s)
+      }
+    }
+
+    fun logicOp (x, y, s, op) {
+      {
+        Binop("^", eax, eax), 
+        Binop("^", edx, edx),
+        Binop("cmp", s1, eax), 
+        Set(suffix("!="), "%al"),
+        Binop("cmp", s2, edx), 
+        Set(suffix("!="), "%dl"),
+        Binop(op, eax, edx), 
+        Mov(edx, s)
+      }
+    }
+
+    fun div (x, y, s) {
+      {
+        Mov(s2, eax), 
+        Cltd, 
+        IDiv (s1), 
+        Mov(eax, s)
+      }
+    }
+
+    fun mod (x, y, s) {
+      {
+        Mov(s2, eax), 
+        Cltd, 
+        IDiv(s1), 
+        Mov(edx, s)
+      }
+    }
+
     foldl (
       fun ([env, code], i) {           
         case i of
@@ -286,7 +336,41 @@ fun compile (env, code) {
             case env.pop of
               [s, env] -> [env, code : {Push (s), Call ("Lwrite"), Pop (eax)}]
             esac
-        | _ -> failure ("Codegeneration for the instruction %s is not yet implemented\n", i.string)
+        | LD (x) -> 
+            case envaddGlobal(x).allocate of 
+              [s, env] -> [env, code : {move (env.loc (x), s)}]
+            esac
+        | ST (x) -> 
+            case envaddGlobal(x).pop of 
+              [s, env] -> [env, code : {move (s, env.loc(x))}]
+            esac
+        | CONST (x) ->  
+            case env.allocate of 
+              [s, env] -> [env, code :  {Mov (L(x), s)}]
+            esac
+        | BINOP (op) ->   
+            case env.pop2() of 
+              [x, y, env] ->
+                case env.allocate() of
+                  [s, env] -> [env, code : 
+                    case op of
+                      "+"     ->  mathOp (x, y, s, op)
+                      | "*"   ->  mathOp (x, y, s, op)
+                      | "-"   ->  mathOp (x, y, s, op)
+                      | "/"   ->  div (x, y, s)
+                      | "%"   ->  mod (x, y, s)
+                      | "=="  ->  compOp (x, y, s, op)
+                      | "!="  ->  compOp (x, y, s, op)
+                      | "<"   ->  compOp (x, y, s, op)
+                      | "<="  ->  compOp (x, y, s, op)
+                      | ">"   ->  compOp (x, y, s, op)
+                      | ">="  ->  compOp (x, y, s, op)
+                      | "!!"  ->  logicOp (x, y, s, op)
+                      | "&&"  ->  logicOp (x, y, s, op)
+                    esac
+                  ]
+                esac
+            esac 
         esac
       }, [env, {}], code)
   }
